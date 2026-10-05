@@ -1,0 +1,97 @@
+name: Translate docs (structure-preserving)
+description: >-
+  Translate a Markdown documentation tree via the md-translate API: code fences, tables,
+  links and frontmatter stay byte-identical, and a glossary file turns terminology drift
+  into a failing check.
+
+branding:
+  icon: globe
+  color: blue
+
+inputs:
+  api-key:
+    description: md-translate API key (store it as a repository secret).
+    required: true
+  api-url:
+    description: Base URL of the md-translate API.
+    required: false
+    default: https://jj-macbook-air.bigeye-caiman.ts.net
+  paths:
+    description: >-
+      Newline-separated glob(s) of Markdown files to translate.
+    required: false
+    default: docs/**/*.md
+  target-lang:
+    description: Instruction passed to the model, e.g. "into Simplified Chinese".
+    required: false
+    default: into Simplified Chinese
+  lang-slug:
+    description: Suffix used for outputs, e.g. zh-CN → README.zh-CN.md (or zh-CN/README.md).
+    required: false
+    default: zh-CN
+  glossary:
+    description: Path to a glossary file (JSON list of {source,target}, or CSV lines).
+    required: false
+    default: ""
+  output-mode:
+    description: sibling (README.zh-CN.md) or subdir (zh-CN/README.md).
+    required: false
+    default: sibling
+  changed-since:
+    description: >-
+      Git ref; when set, only files changed since it are translated (e.g. the PR base SHA).
+    required: false
+    default: ""
+  fail-on-violation:
+    description: Fail the job when a glossary term was not honoured.
+    required: false
+    default: "true"
+  max-chars:
+    description: Hard ceiling on characters submitted (guards against a mis-scoped glob).
+    required: false
+    default: "200000"
+  dry-run:
+    description: Quote only — report characters and cost without translating.
+    required: false
+    default: "false"
+
+outputs:
+  summary:
+    description: One line per file with characters and violation count.
+    value: ${{ steps.translate.outputs.summary }}
+  characters:
+    description: Total billable characters submitted.
+    value: ${{ steps.translate.outputs.characters }}
+
+runs:
+  using: composite
+  steps:
+    - id: translate
+      shell: bash
+      env:
+        MDTRANSLATE_API_KEY: ${{ inputs.api-key }}
+      run: |
+        set -o pipefail
+        args=(
+          --api-url "${{ inputs.api-url }}"
+          --target-lang "${{ inputs.target-lang }}"
+          --lang-slug "${{ inputs.lang-slug }}"
+          --output-mode "${{ inputs.output-mode }}"
+          --max-chars "${{ inputs.max-chars }}"
+        )
+        while IFS= read -r pattern; do
+          [ -n "$pattern" ] && args+=(--paths "$pattern")
+        done <<< "${{ inputs.paths }}"
+        [ -n "${{ inputs.glossary }}" ] && args+=(--glossary "${{ inputs.glossary }}")
+        [ -n "${{ inputs.changed-since }}" ] && args+=(--changed-since "${{ inputs.changed-since }}")
+        [ "${{ inputs.fail-on-violation }}" = "true" ] && args+=(--fail-on-violation)
+        [ "${{ inputs.dry-run }}" = "true" ] && args+=(--dry-run)
+
+        python3 "${{ github.action_path }}/translate_docs.py" "${args[@]}" | tee /tmp/mdtranslate.out
+        chars=$(grep -oE 'characters=[0-9]+' /tmp/mdtranslate.out | tail -1 | cut -d= -f2)
+        echo "characters=${chars:-0}" >> "$GITHUB_OUTPUT"
+        {
+          echo "summary<<EOF"
+          grep -E '^docs/|-> ' /tmp/mdtranslate.out || true
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"

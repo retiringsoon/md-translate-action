@@ -1,0 +1,37 @@
+# 示例：PR 里自动产出译文 + 术语闸门（复制到 .github/workflows/docs-i18n.yml）
+name: docs i18n
+
+on:
+  pull_request:
+    paths: ["docs/**/*.md"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  translate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # changed-since 需要完整历史
+      - name: Translate changed docs
+        uses: retiringsoon/md-translate-action@v1
+        with:
+          api-key: ${{ secrets.MDTRANSLATE_API_KEY }}
+          paths: |
+            docs/**/*.md
+          target-lang: into Simplified Chinese
+          lang-slug: zh-CN
+          glossary: .github/glossary.csv
+          changed-since: ${{ github.event.pull_request.base.sha }}
+          fail-on-violation: "true"
+          max-chars: "200000"
+      - name: Commit translations
+        run: |
+          git config user.name  "docs-bot"
+          git config user.email "docs-bot@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "no changes" || git commit -m "docs: translate to zh-CN"
+          git push || true

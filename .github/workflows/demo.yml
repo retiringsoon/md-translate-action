@@ -1,0 +1,44 @@
+name: demo — translate sample docs
+
+# workflow_dispatch only: this repo's demo job uses the maintainer's API key, so it is
+# not exposed to pull_request or push events (forks cannot read secrets either way).
+on:
+  workflow_dispatch:
+    inputs:
+      target-lang:
+        description: Instruction passed to the model
+        required: false
+        default: into Simplified Chinese
+
+jobs:
+  translate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Translate the sample docs
+        id: translate
+        uses: ./
+        with:
+          api-key: ${{ secrets.MDTRANSLATE_API_KEY }}
+          paths: sample/docs/*.md
+          target-lang: ${{ inputs.target-lang }}
+          lang-slug: zh-CN
+          glossary: sample/.github-glossary.csv
+          fail-on-violation: "true"
+          max-chars: "20000"
+      - name: Show the result
+        run: |
+          echo "characters=${{ steps.translate.outputs.characters }}"
+          echo "----- sample/docs/guide.zh-CN.md -----"
+          cat sample/docs/guide.zh-CN.md
+      - name: Verify code fences survived byte-for-byte
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          a = pathlib.Path("sample/docs/guide.md").read_text()
+          b = pathlib.Path("sample/docs/guide.zh-CN.md").read_text()
+          fa = re.findall(r"```.*?```", a, re.S)
+          fb = re.findall(r"```.*?```", b, re.S)
+          print("fences:", len(fa), "->", len(fb))
+          sys.exit(0 if fa == fb and fa else 1)
+          PY

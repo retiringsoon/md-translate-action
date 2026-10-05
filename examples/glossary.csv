@@ -1,0 +1,5 @@
+# 每行 source,target；# 开头为注释。这个文件进客户仓库，术语漂移会让 CI 失败。
+grinder,磨核
+prompt,提示词
+small dataset,小数据集
+overfitting,过拟合
